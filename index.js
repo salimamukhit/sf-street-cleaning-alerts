@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const directions = {
+const rotationToDirection = {
   0: 'North',
   45: 'NorthEast',
   90: 'East',
@@ -12,7 +12,7 @@ const directions = {
   315: 'NorthWest',
 };
 
-const carDirectionToStreetSide = {
+const directionToStreetSide = {
   'North': 'East',
   'South': 'West',
   'East': 'South',
@@ -61,31 +61,25 @@ app.listen(3000, () => {
 });
 
 async function getNextCleaningTime() {
-  let streetObj;
+  let closestStreetObj;
+  let smallestDistance = 1000;
   const myLocation = { coordinates: [-122.439612, 37.804950], rotation: 330 };
-  const matchStreetObjects = [];
   const [myLong, myLat] = myLocation.coordinates;
   const result = await fetch('https://raw.githubusercontent.com/kaushalpartani/sf-street-cleaning/refs/heads/main/data/neighborhoods/Marina.geojson');
   const marinaGeoJson = await result.json();
+
   for (const feature of marinaGeoJson.features) {
     const { coordinates } = feature.geometry;
-    const [firstLong, firstLat] = coordinates[0];
-    const [lastLong, lastLat] = coordinates[coordinates.length - 1];
-    const maxLong = Math.max(firstLong, lastLong);
-    const minLong = Math.min(firstLong, lastLong);
-    const maxLat = Math.max(firstLat, lastLat);
-    const minLat = Math.min(firstLat, lastLat);
-    const inRangeLong = maxLong > myLong && myLong > minLong;
-    const inRangeLat = maxLat > myLat && myLat > minLat;
-    if (inRangeLong && inRangeLat) {
-      streetObj = feature;
-      break;
-    } else if (inRangeLat || inRangeLong) {
-      matchStreetObjects.push({ feature, inRangeLat, inRangeLong });
-    }
+    coordinates.forEach(coordinate => {
+      const [long, lat] = coordinate;
+      const distance = Math.sqrt((myLong - long)*(myLong - long) + (myLat - lat)*(myLat - lat));
+      console.log({ distance, street: feature.properties.Corridor });
+      if (distance < smallestDistance) {
+        closestStreetObj = feature;
+        smallestDistance = distance;
+      }
+    });
   }
-
-  console.log(matchStreetObjects);
 }
 
 getNextCleaningTime();
