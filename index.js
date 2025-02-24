@@ -24,62 +24,88 @@ const directionToStreetSide = {
 };
 
 app.get("/", (req, res) => {
-  // Rico Way street between Avila and Retiro
-  const coordinates = [ [ -122.438141726427006, 37.804929656543003 ], [ -122.438817461097997, 37.804848769625998 ], [ -122.438975644593995, 37.804854386000997 ], [ -122.439124591332003, 37.804881403631001 ], [ -122.439248915598995, 37.804924487843998 ], [ -122.440328098742, 37.805498532663002 ] ]
-
-  const myCoordinate = [-122.438488, 37.804844];
-
-  let longDiffs = 0;
-  let latDiffs = 0;
-
-  for (let i = 0; i < coordinates.length - 1; i++) {
-    const [long, lat] = coordinates[i];
-    const [nextLong, nextLat] = coordinates[i+1];
-
-    longDiffs += Math.abs(nextLong - long);
-    latDiffs += Math.abs(nextLat - lat);
-  }
-
-  const longGradient = longDiffs / coordinates.length;
-  const latGradient = latDiffs / coordinates.length;
-
-  const streetDirection = latGradient > longGradient ? 'vertical' : 'horizontal';
-
-  const [topLong, topLat] = coordinates[0];
-  const [bottomLong, bottomLat] = coordinates[coordinates.length - 1];
-  const maxLong = Math.max(topLong, bottomLong);
-  const minLong = Math.min(topLong, bottomLong);
-  const maxLat = Math.max(topLat, bottomLat);
-  const minLat = Math.min(topLat, bottomLat);
-  const [long, lat] = myCoordinate;
-  const isOnStreet = maxLong > long && minLong < long && maxLat > lat && minLat < lat;
-  res.send({ minLat, maxLat, minLong, maxLong, lat, long, isOnStreet });
+  res.send('SF Street Cleaning Alerts');
 });
 
 app.listen(3000, () => {
   console.log(`Server is running on port 3000`);
 });
 
-async function getNextCleaningTime() {
-  let closestStreetObj;
-  let smallestDistance = 1000;
-  const myLocation = { coordinates: [-122.439612, 37.804950], rotation: 330 };
-  const [myLong, myLat] = myLocation.coordinates;
-  const result = await fetch('https://raw.githubusercontent.com/kaushalpartani/sf-street-cleaning/refs/heads/main/data/neighborhoods/Marina.geojson');
-  const marinaGeoJson = await result.json();
+function getDirection(rotation) {
+  let smallestDiff = 1000;
+  let myDirection;
 
-  for (const feature of marinaGeoJson.features) {
-    const { coordinates } = feature.geometry;
-    coordinates.forEach(coordinate => {
-      const [long, lat] = coordinate;
-      const distance = Math.sqrt((myLong - long)*(myLong - long) + (myLat - lat)*(myLat - lat));
-      console.log({ distance, street: feature.properties.Corridor });
-      if (distance < smallestDistance) {
-        closestStreetObj = feature;
-        smallestDistance = distance;
-      }
-    });
-  }
+  Object.entries(rotationToDirection).forEach(entry => {
+    const degrees = Number(entry[0]);
+    const direction = entry[1];
+    const diff = Math.abs(rotation - degrees);
+    if (diff < smallestDiff) {
+      myDirection = direction;
+    }
+  });
+
+  return myDirection;
 }
 
-getNextCleaningTime();
+function getPossibleStreetSides(carDirection) {
+  const possibleSides = [];
+  Object.entries(directionToStreetSide).forEach(entry => {
+    const direction = entry[0];
+    const streetSide = entry[1];
+    if (carDirection.includes(direction)) {
+      possibleSides.push(streetSide);
+    }
+  });
+
+  return possibleSides;
+}
+
+async function getNextCleaningTime() {
+  const result = await fetch('https://raw.githubusercontent.com/kaushalpartani/sf-street-cleaning/refs/heads/main/data/neighborhoods/Marina.geojson');
+  const marinaGeoJson = await result.json();
+  // Test location: 59 Rico Way, SouthWest rotation. Has to retrieve the cleaning schedule for Rico Way North Side (which it does)
+  const myLocation = { coordinates: [-122.439612, 37.804950], rotation: 330 };
+  const [myLong, myLat] = myLocation.coordinates;
+  const myDirection = getDirection(myLocation.rotation);
+  const possibleStreetSides = getPossibleStreetSides(myDirection);
+
+  let closestStreetObj;
+  let smallestDistance = 1000;
+
+  for (const feature of marinaGeoJson.features) {
+    let isPossibleSide = false;
+    for (const streetSide of possibleStreetSides) {
+      if (feature.properties.Sides[streetSide]) {
+        isPossibleSide = true;
+        break;
+      }
+    }
+
+    if (isPossibleSide) {
+      const { coordinates } = feature.geometry;
+      // iterate through every coordinate of the street and determine the distance between my location and the coordinate
+      coordinates.forEach(coordinate => {
+        const [long, lat] = coordinate;
+        const distance = Math.sqrt((myLong - long)*(myLong - long) + (myLat - lat)*(myLat - lat));
+        if (distance < smallestDistance) {
+          closestStreetObj = feature;
+          smallestDistance = distance;
+        }
+      });
+    }
+  }
+
+  let nextCleaning;
+  for (const [side, schedule] of Object.entries(closestStreetObj.properties.Sides)) {
+    if (possibleStreetSides.includes(side)) {
+      nextCleaning = schedule.NextCleaning;
+      break;
+    }
+  }
+
+  return nextCleaning;
+}
+
+getNextCleaningTime().then(nextCleaning => {
+  console.log('Next cleaning time is', nextCleaning);
+})
