@@ -41,55 +41,44 @@ function getDirection(rotation) {
     const diff = Math.abs(rotation - degrees);
     if (diff < smallestDiff) {
       myDirection = direction;
+      smallestDiff = diff;
     }
   });
 
   return myDirection;
 }
 
-function getPossibleStreetSides(carDirection) {
-  const possibleSides = [];
-  Object.entries(directionToStreetSide).forEach(entry => {
-    const direction = entry[0];
-    const streetSide = entry[1];
-    if (carDirection.includes(direction)) {
-      possibleSides.push(streetSide);
-    }
-  });
-
-  return possibleSides;
+function getStreetSide(carDirection) {
+  return directionToStreetSide[carDirection];
 }
+
+// TODO function isParallelToLine(rotation, coordinates)
 
 async function getNextCleaningTime() {
   const result = await fetch('https://raw.githubusercontent.com/kaushalpartani/sf-street-cleaning/refs/heads/main/data/neighborhoods/Marina.geojson');
   const marinaGeoJson = await result.json();
-  // Test location: 59 Rico Way, SouthWest rotation. Has to retrieve the cleaning schedule for Rico Way North Side (which it does)
-  const myLocation = { coordinates: [-122.439612, 37.804950], rotation: 330 };
+  // Test location: 101 Cervantez Boulevard, NorthWest rotation. Has to retrieve Cervantez Boulevard
+  const myLocation = { coordinates: [-122.439706, 37.804484], rotation: 315 };
   const [myLong, myLat] = myLocation.coordinates;
   const myDirection = getDirection(myLocation.rotation);
-  const possibleStreetSides = getPossibleStreetSides(myDirection);
+  const streetSide = getStreetSide(myDirection);
+  console.log({ myDirection, possibleStreetSides: streetSide });
 
   let closestStreetObj;
   let smallestDistance = 1000;
 
   for (const feature of marinaGeoJson.features) {
-    let isPossibleSide = false;
-    for (const streetSide of possibleStreetSides) {
-      if (feature.properties.Sides[streetSide]) {
-        isPossibleSide = true;
-        break;
-      }
-    }
-
-    if (isPossibleSide) {
+    // TODO: instead of filtering it here, filter it when determining the sides of the street
+    if (feature.properties.Sides[streetSide]) {
       const { coordinates } = feature.geometry;
-      // iterate through every coordinate of the street and determine the distance between my location and the coordinate
+      // iterate through every possible line of the coordinates and get the distance between this line and a point
       coordinates.forEach(coordinate => {
         const [long, lat] = coordinate;
         const distance = Math.sqrt((myLong - long)*(myLong - long) + (myLat - lat)*(myLat - lat));
         if (distance < smallestDistance) {
           closestStreetObj = feature;
           smallestDistance = distance;
+          console.log(closestStreetObj.properties.Corridor)
         }
       });
     }
@@ -97,7 +86,8 @@ async function getNextCleaningTime() {
 
   let nextCleaning;
   for (const [side, schedule] of Object.entries(closestStreetObj.properties.Sides)) {
-    if (possibleStreetSides.includes(side)) {
+    if (streetSide.includes(side)) {
+      console.log({ side, street: closestStreetObj.properties.Corridor });
       nextCleaning = schedule.NextCleaning;
       break;
     }
