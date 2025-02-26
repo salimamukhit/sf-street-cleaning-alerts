@@ -29,7 +29,7 @@ app.get("/", (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log(`Server is running on port 3000`);
+  console.info(`Server is running on port 3000`);
 });
 
 function getDirection(rotation) {
@@ -49,23 +49,6 @@ function getDirection(rotation) {
   return myDirection;
 }
 
-function getPossibleStreetSides(carDirection) {
-  const possibleStreetSides = [];
-  Object.entries(directionToStreetSide).forEach(entry => {
-    if (carDirection.includes(entry[0]) || entry[0].includes(carDirection)) {
-      possibleStreetSides.push(entry[1]);
-    }
-  });
-
-  return possibleStreetSides;
-}
-
-function getRotationFromCoordinates(coordinates) {
-  const slope = (coordinates[1][1] - coordinates[0][1]) / (coordinates[1][0] - coordinates[0][0]);
-  let streetRotation = Math.atan(slope) * (180 / Math.PI);
-  return streetRotation;
-}
-
 function getStreetSlope(coordinates) {
   const slope = (coordinates[1][1] - coordinates[0][1]) / (coordinates[1][0] - coordinates[0][0]);
   return slope;
@@ -75,13 +58,13 @@ function getCarSlope(rotation) {
   const step = 1/90;
   let x;
   let y; 
-  if (rotation > 0 && rotation < 90) {
+  if (rotation > 0 && rotation <= 90) {
     x = rotation * (step);
     y = 1 - x;
   } else if (rotation > 90 && rotation < 180) {
     x = (180 - rotation) * (step);
     y = (1 - x) * -1;
-  } else if (rotation > 180 && rotation < 270) {
+  } else if (rotation > 180 && rotation <= 270) {
     x = (180 - rotation) * (step);
     y = (1 + x) * -1;
   } else if (rotation > 270 && rotation < 360) {
@@ -95,8 +78,20 @@ function getCarSlope(rotation) {
 function isParallelToLine(rotation, coordinates) {
   const streetSlope = getStreetSlope(coordinates);
   const carSlope = getCarSlope(rotation);
-  console.log({ streetSlope, carSlope });
-  return Math.abs(streetSlope - carSlope) <= 2;
+  return Math.abs(streetSlope - carSlope) <= 1.5;
+}
+
+function getCleaningTimeFromObject(carDirection, streetObject) {
+  const carStreetSide = directionToStreetSide[carDirection];
+  let cleaningTime;
+  let parkedOnSide;
+  Object.keys(streetObject.properties.Sides).forEach(side => {
+    if (side.includes(carStreetSide) || carStreetSide.includes(side)) {
+      parkedOnSide = side;
+      cleaningTime = streetObject.properties.Sides[side].NextCleaning;
+    }
+  });
+  return { nextCleaning: cleaningTime, parkedOnSide };
 }
 
 async function getNextCleaningTime() {
@@ -106,7 +101,6 @@ async function getNextCleaningTime() {
   const myLocation = { coordinates: [-122.439706, 37.804484], rotation: 330 };
   const [myLong, myLat] = myLocation.coordinates;
   const myDirection = getDirection(myLocation.rotation);
-  const possibleStreetSides = getPossibleStreetSides(myDirection);
 
   let closestStreetObj;
   let smallestDistance = 1000;
@@ -127,22 +121,12 @@ async function getNextCleaningTime() {
       }
     }
   }
-  let nextCleaning;
-  console.log(closestStreetObj.properties, possibleStreetSides, myDirection);
-  return nextCleaning;
+
+  const { nextCleaning, parkedOnSide } = getCleaningTimeFromObject(myDirection, closestStreetObj);
+  return { nextCleaning, street: closestStreetObj.properties.StreetIdentifier, parkedOnSide };
 }
 
-getNextCleaningTime().then(nextCleaning => {
-  console.log('Next cleaning time is', nextCleaning);
-  const verticalStreetCoordinates = [ [ -122.438141726427006, 37.804929656543003 ], [ -122.438187217150002, 37.805158845081998 ] ];
-  const horizontalStreetCoordinates = [[ -122.434082099831997, 37.804916832510997 ], [ -122.435357388113999, 37.804757060823 ]];
-  const diagonalStreetCoordinatesLeft = [ [ -122.439255016548003, 37.804081091707999 ], [ -122.440507034258005, 37.804756505161997 ] ];
-  const diagonalStreetCoordinatesRight = [ [ -122.440817677493001, 37.804924080614001 ], [ -122.440328098742, 37.805498532663002 ] ]
-  console.log({
-    verticalRotation: getStreetSlope(verticalStreetCoordinates),
-    horizontalRotation: getStreetSlope(horizontalStreetCoordinates),
-    diagonalRotationLeft: getStreetSlope(diagonalStreetCoordinatesLeft),
-    diagonalRotationRight: getStreetSlope(diagonalStreetCoordinatesRight),
-  });
-  console.log(getCarSlope(315));
+getNextCleaningTime().then(({ nextCleaning, street, parkedOnSide }) => {
+  console.log(nextCleaning, street, parkedOnSide);
+  console.log(getCarSlope(45));
 })
